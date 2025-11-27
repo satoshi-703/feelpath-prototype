@@ -1,0 +1,7 @@
+# Node.js
+fronted/my-app/node_modules/
+fronted/my-app/.next/
+fronted/my-app/.env
+
+# OS
+.DS_Store
