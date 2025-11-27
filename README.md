@@ -52,6 +52,7 @@
 ```bash
 git clone <リポジトリURL>
 cd <プロジェクトフォルダ>
+```bash
 
 2. 依存関係インストール
 npm install
