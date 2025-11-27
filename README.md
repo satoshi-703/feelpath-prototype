@@ -52,10 +52,12 @@
 ```bash
 git clone <リポジトリURL>
 cd <プロジェクトフォルダ>
-```bash
+```
 
 2. 依存関係インストール
+```bash
 npm install
+```
 
 ## 実行方法
 
@@ -65,13 +67,14 @@ npm install
 ```bash
 cd ~/project_app/feelpath/backend
 uvicorn main:app --reload --port 8000
-
+```
 ### 2. フロントエンド起動 (Next.js)
 別のターミナルを開き、page.tsx があるフロントエンドディレクトリに移動して以下を実行します。
 
+```bash
 cd ~/project_app/feelpath/frontend/my-app
 npm run dev
-
+```
 
 ## 注意
 
