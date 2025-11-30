@@ -27,6 +27,7 @@ class Edge(BaseModel):
     weight: Optional[float] = None
     class Config:
         allow_population_by_field_name = True
+
 # グラフデータ
 class GraphData(BaseModel):
     user_id: str

@@ -29,6 +29,10 @@ export default function Home() {
   const [showDegrees, setShowDegrees] = useState(false);
   const [degreeDist, setDegreeDist] = useState<Record<number, number>>({});
   const [showDegreeDist, setShowDegreeDist] = useState(false);
+  const [clusteringCoefficients, setClusteringCoefficients] = useState<Record<number, number>>({});
+  const [showClustering, setShowClustering] = useState(false);
+  const [averageClustering, setAverageClustering] = useState<number | null>(null);
+
 
 
 
@@ -244,6 +248,56 @@ export default function Home() {
     return { counts };
   }
 
+  // ▼ ノードの隣接ノードを取得
+  function getNeighbors(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
+    const neighbors = new Set<number>();
+    edges.forEach(e => {
+      if (e.from === nodeId) neighbors.add(e.to);
+      if (e.to === nodeId) neighbors.add(e.from); // 無向グラフ扱い
+    });
+    return Array.from(neighbors);
+  }
+
+  // ▼ 隣接ノード同士でつながっている数を数える
+  function countNeighborConnections(neighbors: number[], edges: { from: number; to: number; weight: number }[]) {
+    let count = 0;
+    const set = new Set(neighbors);
+    edges.forEach(e => {
+      if (set.has(e.from) && set.has(e.to)) count++;
+    });
+    return count;
+  }
+
+  // ▼ クラスタ係数（あるノード）
+  function clusteringCoefficient(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
+    const neighbors = getNeighbors(nodeId, edges);
+    const k = neighbors.length;
+
+    if (k < 2) return 0;
+
+    const E = countNeighborConnections(neighbors, edges);
+
+    return E / (k * (k - 1));
+  }
+
+  // ▼ 全ノードのクラスタ係数を計算
+  function computeClusteringCoefficients() {
+    const result: Record<number, number> = {};
+
+    nodes.forEach(node => {
+      result[node.id] = clusteringCoefficient(node.id, edges);
+    });
+
+    setClusteringCoefficients(result);
+
+    // 平均値も計算
+    const values = Object.values(result);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    setAverageClustering(avg);
+
+    setShowClustering(true);
+  }
+
 
 
   return (
@@ -410,6 +464,20 @@ export default function Home() {
                       }}
                     >
                       次数分布 {showDegreeDist ? "非表示" : "表示"}
+                    </button>
+
+                    <button
+                      className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg
+  transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
+                      onClick={() => {
+                        if (!showClustering) {
+                          computeClusteringCoefficients(); // 計算して表示
+                        } else {
+                          setShowClustering(false); // すでに表示中なら閉じる
+                        }
+                      }}
+                    >
+                      クラスタ係数 {showClustering ? "非表示" : "表示"}
                     </button>
 
                   </div>
@@ -647,6 +715,40 @@ export default function Home() {
         </div>
       )}
 
+
+      {showClustering && (
+        <div className="absolute top-10 right-10 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
+          <button
+            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
+            onClick={() => setShowClustering(false)}
+          >
+            ×
+          </button>
+
+          <h2 className="text-lg font-bold mb-2">クラスタ係数</h2>
+
+          <table className="w-full border text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border px-2 py-1">ノード</th>
+                <th className="border px-2 py-1">係数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(clusteringCoefficients).map(([id, coeff]) => (
+                <tr key={id}>
+                  <td className="border px-2 py-1">{id}</td>
+                  <td className="border px-2 py-1">{coeff.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <p className="mt-3 font-bold">
+            平均クラスタ係数：{averageClustering?.toFixed(3)}
+          </p>
+        </div>
+      )}
 
 
       <svg className="flex-1 border" onClick={handleCanvasClick}>
