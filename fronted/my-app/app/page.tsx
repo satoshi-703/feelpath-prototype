@@ -32,6 +32,12 @@ export default function Home() {
   const [clusteringCoefficients, setClusteringCoefficients] = useState<Record<number, number>>({});
   const [showClustering, setShowClustering] = useState(false);
   const [averageClustering, setAverageClustering] = useState<number | null>(null);
+  const [averageDistance, setAverageDistance] = useState<number | null>(null);
+  const [showAverageDistance, setShowAverageDistance] = useState(false);
+  const [showAvgNeighborDegree, setShowAvgNeighborDegree] = useState(false);
+  const [avgNeighborDegreeList, setAvgNeighborDegreeList] = useState<{ id: number; label: string; avgNeighborDegree: number }[]>([]);
+
+
 
 
 
@@ -298,6 +304,54 @@ export default function Home() {
     setShowClustering(true);
   }
 
+  function averageShortestPathFromMatrix() {
+    const dist = generateDistanceMatrix();
+    const n = dist.length;
+
+    let total = 0;
+    let count = 0;
+
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j && dist[i][j] < Infinity) {
+          total += dist[i][j];
+          count++;
+        }
+      }
+    }
+
+    if (count === 0) return 0;
+    return total / count;
+  }
+
+  // ▼ ノードの次数を取得
+  function getDegree(nodeId: number) {
+    const matrix = generateUndirectedAdjacencyMatrix();
+    const idToIndex: Record<number, number> = {};
+    nodes.forEach((node, idx) => { idToIndex[node.id] = idx; });
+
+    const idx = idToIndex[nodeId];
+    if (idx === undefined) return 0;
+
+    return matrix[idx].reduce((a, b) => a + b, 0);
+  }
+
+  // ▼ 平均近傍次数を計算
+  function averageNeighborDegree(nodeId: number) {
+    const neighbors = getNeighbors(nodeId, edges);
+    const k = neighbors.length;
+
+    if (k === 0) return 0;
+
+    let total = 0;
+    neighbors.forEach(nid => {
+      total += getDegree(nid);
+    });
+
+    return total / k;
+  }
+
+
 
 
   return (
@@ -478,6 +532,42 @@ export default function Home() {
                       }}
                     >
                       クラスタ係数 {showClustering ? "非表示" : "表示"}
+                    </button>
+
+                    <button
+                      className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg
+  transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
+                      onClick={() => {
+                        if (!showAverageDistance) {
+                          const avg = averageShortestPathFromMatrix();
+                          setAverageDistance(avg);
+                          setShowAverageDistance(true);
+                        } else {
+                          setShowAverageDistance(false);
+                        }
+                      }}
+                    >
+                      平均ノード間距離 {showAverageDistance ? "非表示" : "表示"}
+                    </button>
+
+                    <button
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg
+  transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
+                      onClick={() => {
+                        if (!showAvgNeighborDegree) {
+                          const list = nodes.map(n => ({
+                            id: n.id,
+                            label: n.label,
+                            avgNeighborDegree: averageNeighborDegree(n.id)
+                          }));
+                          setAvgNeighborDegreeList(list);
+                          setShowAvgNeighborDegree(true);
+                        } else {
+                          setShowAvgNeighborDegree(false);
+                        }
+                      }}
+                    >
+                      平均近傍次数 {showAvgNeighborDegree ? "非表示" : "表示"}
                     </button>
 
                   </div>
@@ -717,7 +807,7 @@ export default function Home() {
 
 
       {showClustering && (
-        <div className="absolute top-10 right-10 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
+        <div className="absolute top-2/3 right-4/8 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
           <button
             className="bg-red-500 text-white px-2 py-1 rounded mb-2"
             onClick={() => setShowClustering(false)}
@@ -747,6 +837,57 @@ export default function Home() {
           <p className="mt-3 font-bold">
             平均クラスタ係数：{averageClustering?.toFixed(3)}
           </p>
+        </div>
+      )}
+
+      {showAverageDistance && (
+        <div className="absolute top-10 right-2/8 bg-white border shadow-lg p-4 w-80 rounded-lg z-50">
+          <button
+            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
+            onClick={() => setShowAverageDistance(false)}
+          >
+            ×
+          </button>
+
+          <h2 className="text-xl font-bold mb-2">平均ノード間距離</h2>
+
+          <div className="text-center text-2xl font-semibold text-indigo-600">
+            {averageDistance !== null ? averageDistance.toFixed(3) : "-"}
+          </div>
+
+          <p className="text-gray-600 text-sm mt-2">
+            グラフ内の全ペアの最短距離の平均値です。
+          </p>
+        </div>
+      )}
+
+      {showAvgNeighborDegree && (
+        <div className="absolute top-1/4 right-2/8 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
+          <button
+            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
+            onClick={() => setShowAvgNeighborDegree(false)}
+          >
+            ×
+          </button>
+          <h2 className="text-lg font-bold mb-2 border-b pb-1">平均近傍次数</h2>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border px-2 py-1">ID</th>
+                <th className="border px-2 py-1">ラベル</th>
+                <th className="border px-2 py-1">平均近傍次数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {avgNeighborDegreeList.map(n => (
+                <tr key={n.id}>
+                  <td className="border px-2 py-1">{n.id}</td>
+                  <td className="border px-2 py-1">{n.label}</td>
+                  <td className="border px-2 py-1">{n.avgNeighborDegree.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
