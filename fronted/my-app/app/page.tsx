@@ -25,7 +25,7 @@ export default function Home() {
   const [showDistanceMatrix, setShowDistanceMatrix] = useState(false);
   const [showUndirectedMatrix, setShowUndirectedMatrix] = useState(false);
   const [nodeDegrees, setNodeDegrees] = useState<{ id: number, label: string, degree: number }[]>([]);
-  const [averageDegree, setAverageDegree] = useState<number | null>(null);
+  // averageDegree, setAverageDegreeは未使用のため削除
   const [showDegrees, setShowDegrees] = useState(false);
   const [degreeDist, setDegreeDist] = useState<Record<number, number>>({});
   const [showDegreeDist, setShowDegreeDist] = useState(false);
@@ -90,7 +90,7 @@ export default function Home() {
     dist[startId] = 0;
 
     while (unvisited.size > 0) {
-      let current = [...unvisited].reduce((a, b) => (dist[a] < dist[b] ? a : b));
+      const current = [...unvisited].reduce((a, b) => (dist[a] < dist[b] ? a : b));
       unvisited.delete(current);
       if (current === goalId) break;
       edges.filter(e => e.from === current).forEach(e => {
@@ -492,9 +492,8 @@ export default function Home() {
   transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
                       onClick={() => {
                         if (!showDegrees) { // 非表示なら計算して表示
-                          const { degrees, avg } = calculateDegrees();
+                          const { degrees } = calculateDegrees();
                           setNodeDegrees(degrees);
-                          setAverageDegree(avg);
                           setShowDegrees(true);
                         } else { // 表示中なら非表示にする
                           setShowDegrees(false);
