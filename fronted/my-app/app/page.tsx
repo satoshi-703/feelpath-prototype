@@ -41,7 +41,6 @@ export default function Home() {
 
 
 
-
   {/*ノード追加処理*/ }
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -53,7 +52,7 @@ export default function Home() {
     setNodeLabelInput("");
   };
 
-
+  {/*ノードクリック処理*/ }
   const handleNodeClick = (nodeId: number) => {
     if (selectedNode === null) {
       setSelectedNode(nodeId);
@@ -71,7 +70,7 @@ export default function Home() {
     }
   };
 
-
+  {/*ノード右クリック処理（削除）*/ }
   const handleNodeRightClick = (e: React.MouseEvent, nodeId: number) => {
     e.preventDefault();
     setNodes(nodes.filter(n => n.id !== nodeId));
@@ -254,7 +253,7 @@ export default function Home() {
     return { counts };
   }
 
-  // ▼ ノードの隣接ノードを取得
+  {/*ノードの隣接ノードを取得*/ }
   function getNeighbors(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
     const neighbors = new Set<number>();
     edges.forEach(e => {
@@ -264,7 +263,7 @@ export default function Home() {
     return Array.from(neighbors);
   }
 
-  // ▼ 隣接ノード同士でつながっている数を数える
+  {/*隣接ノード同士でつながっている数を数える*/ }
   function countNeighborConnections(neighbors: number[], edges: { from: number; to: number; weight: number }[]) {
     let count = 0;
     const set = new Set(neighbors);
@@ -274,7 +273,7 @@ export default function Home() {
     return count;
   }
 
-  // ▼ クラスタ係数（あるノード）
+  {/*クラスタ係数（あるノード）*/ }
   function clusteringCoefficient(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
     const neighbors = getNeighbors(nodeId, edges);
     const k = neighbors.length;
@@ -286,7 +285,7 @@ export default function Home() {
     return E / (k * (k - 1));
   }
 
-  // ▼ 全ノードのクラスタ係数を計算
+  {/*全ノードのクラスタ係数を計算*/ }
   function computeClusteringCoefficients() {
     const result: Record<number, number> = {};
 
@@ -304,6 +303,7 @@ export default function Home() {
     setShowClustering(true);
   }
 
+  {/*距離行列から平均ノード間距離を計算*/ }
   function averageShortestPathFromMatrix() {
     const dist = generateDistanceMatrix();
     const n = dist.length;
@@ -324,7 +324,7 @@ export default function Home() {
     return total / count;
   }
 
-  // ▼ ノードの次数を取得
+  {/*ノードの次数を取得*/ }
   function getDegree(nodeId: number) {
     const matrix = generateUndirectedAdjacencyMatrix();
     const idToIndex: Record<number, number> = {};
@@ -336,7 +336,7 @@ export default function Home() {
     return matrix[idx].reduce((a, b) => a + b, 0);
   }
 
-  // ▼ 平均近傍次数を計算
+  {/*平均近傍次数を計算*/ }
   function averageNeighborDegree(nodeId: number) {
     const neighbors = getNeighbors(nodeId, edges);
     const k = neighbors.length;
@@ -650,22 +650,33 @@ export default function Home() {
           <div className="flex gap-2 mb-2">
             <button
               className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg shadow transition-all duration-300 hover:scale-105"
-              onClick={async () => {
+              onClick={() => {
+                // graphIdが未設定なら新規IDを生成
+                let id = graphId;
+                if (!id) {
+                  id = crypto.randomUUID();
+                  setGraphId(id);
+                }
                 const data = { nodes, edges, weightedMode, user_id: "user1" };
-                const res = await fetch("http://localhost:8000/api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-                const json = await res.json();
-                setGraphId(json.graph_id); alert("保存完了! ID:" + json.graph_id);
+                localStorage.setItem("graph-" + id, JSON.stringify(data));
+                alert("保存完了! ID:" + id);
               }}
             >保存</button>
             <button
               className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg shadow transition-all duration-300 hover:scale-105"
-              onClick={async () => {
+              onClick={() => {
                 if (!graphId) return alert("Graph ID を入力してください");
-                const res = await fetch(`http://localhost:8000/api/load/${graphId}`);
-                const data = await res.json();
-                const fixedEdges = data.edges.map((e: any) => ({ from: e.from_ ?? e.from, to: e.to, weight: e.weight }));
-                setNodes(data.nodes); setEdges(fixedEdges); setWeightedMode(data.weightedMode);
-                alert("読み込み完了!");
+                const raw = localStorage.getItem("graph-" + graphId);
+                if (!raw) return alert("データが見つかりません");
+                try {
+                  const data = JSON.parse(raw);
+                  // バグ。from__ が来たらそれを使うしなければ from を使う
+                  const fixedEdges = data.edges.map((e: any) => ({ from: e.from_ ?? e.from, to: e.to, weight: e.weight }));
+                  setNodes(data.nodes); setEdges(fixedEdges); setWeightedMode(data.weightedMode);
+                  alert("読み込み完了!");
+                } catch {
+                  alert("データの読み込みに失敗しました");
+                }
               }}
             >読み込み</button>
           </div>
