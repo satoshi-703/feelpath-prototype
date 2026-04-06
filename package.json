@@ -1,5 +1,8 @@
 {
   "devDependencies": {
     "baseline-browser-mapping": "^2.10.14"
+  },
+  "dependencies": {
+    "react-markdown": "^10.1.0"
   }
 }

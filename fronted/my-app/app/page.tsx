@@ -1,8 +1,11 @@
 "use client";
 import { useState } from "react";
+
 import DegreeCardSlider from "../components/ui/DegreeCardSlider";
+import HelpModal from "../components/ui/HelpModal";
 
 export default function Home() {
+  const [helpOpen, setHelpOpen] = useState(false);
   const [nodes, setNodes] = useState<{ id: number; x: number; y: number; label: string }[]>([]);
   const [edges, setEdges] = useState<{ from: number; to: number; weight: number }[]>([]);
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
@@ -355,7 +358,15 @@ export default function Home() {
 
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans">
+    <div className="flex h-screen bg-gray-100 font-sans relative">
+      {/* ヘルプボタン 右上 */}
+      <button
+        className="fixed top-4 right-4 z-50 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow-lg transition-all duration-300"
+        onClick={() => setHelpOpen(true)}
+      >
+        ヘルプ
+      </button>
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       {/* 左メニュー */}
       <div className="w-1/4 p-4 space-y-6 overflow-y-auto">
         {/* グラフ操作カード */}
