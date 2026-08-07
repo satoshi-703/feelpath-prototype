@@ -3,11 +3,26 @@ import { useState } from "react";
 
 import DegreeCardSlider from "../components/ui/DegreeCardSlider";
 import HelpModal from "../components/ui/HelpModal";
+import InfoPanels from "../components/InfoPanels";
+import GraphCanvas from "../components/GraphCanvas";
+import {
+  GraphNode,
+  GraphEdge,
+  findShortestPath,
+  findLongestPath,
+  calcMaxDegreeNodes as calcMaxDegreeNodesPure,
+  calculateDegrees,
+  calculateDegreeDistribution,
+  computeClusteringCoefficients as computeClusteringCoefficientsPure,
+  averageShortestPathFromMatrix,
+  averageNeighborDegree,
+} from "../lib/graph";
 
 export default function Home() {
   const [helpOpen, setHelpOpen] = useState(false);
-  const [nodes, setNodes] = useState<{ id: number; x: number; y: number; label: string }[]>([]);
-  const [edges, setEdges] = useState<{ from: number; to: number; weight: number }[]>([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [nodeIdCounter, setNodeIdCounter] = useState(0);
   const [startNodeId, setStartNodeId] = useState<number | null>(null);
@@ -83,282 +98,38 @@ export default function Home() {
     if (goalNodeId === nodeId) setGoalNodeId(null);
   };
 
-
-  {/*最短経路探索*/ }
-  function findShortestPath(startId: number, goalId: number) {
-    const dist: Record<number, number> = {};
-    const prev: Record<number, number | null> = {};
-    const unvisited = new Set(nodes.map(n => n.id));
-    nodes.forEach(n => { dist[n.id] = Infinity; prev[n.id] = null; });
-    dist[startId] = 0;
-
-    while (unvisited.size > 0) {
-      const current = [...unvisited].reduce((a, b) => (dist[a] < dist[b] ? a : b));
-      unvisited.delete(current);
-      if (current === goalId) break;
-      edges.filter(e => e.from === current).forEach(e => {
-        const alt = dist[current] + e.weight;
-        if (alt < dist[e.to]) { dist[e.to] = alt; prev[e.to] = current; }
-      });
-    }
-
-    const path: number[] = [];
-    let u: number | null = goalId;
-    while (u !== null) { path.unshift(u); u = prev[u]; }
-    return path;
-  }
-
-
-  {/*最長経路探索*/ }
-  function findLongestPath(startId: number, goalId: number) {
-    const paths: number[][] = [];
-    function dfs(current: number, visited: Set<number>, path: number[]) {
-      if (current === goalId) {
-        paths.push([...path]);
-        return;
-      }
-      edges.filter(e => e.from === current).forEach(e => {
-        if (!visited.has(e.to)) {
-          visited.add(e.to);
-          path.push(e.to);
-          dfs(e.to, visited, path);
-          path.pop();
-          visited.delete(e.to);
-        }
-      });
-    }
-    dfs(startId, new Set([startId]), [startId]);
-
-    let maxPath: number[] = [];
-    let maxWeight = -Infinity;
-    paths.forEach(p => {
-      let w = 0;
-      for (let i = 1; i < p.length; i++) {
-        const e = edges.find(e => e.from === p[i - 1] && e.to === p[i]);
-        if (e) w += e.weight;
-      }
-      if (w > maxWeight) { maxWeight = w; maxPath = p; }
-    });
-    return maxPath;
-  }
-  const calcMaxDegreeNodes = () => {
-    const inDegree: Record<number, number> = {};
-    const outDegree: Record<number, number> = {};
-    nodes.forEach(n => { inDegree[n.id] = 0; outDegree[n.id] = 0; });
-    edges.forEach(e => { outDegree[e.from]++; inDegree[e.to]++; });
-
-    const maxIn = Math.max(...Object.values(inDegree));
-    const maxOut = Math.max(...Object.values(outDegree));
-
-    const maxInNode = nodes.find(n => inDegree[n.id] === maxIn)?.id ?? null;
-    const maxOutNode = nodes.find(n => outDegree[n.id] === maxOut)?.id ?? null;
-
-    setMaxInNodeId(maxInNode);
-    setMaxOutNodeId(maxOutNode);
+  {/*ノードのドラッグ移動処理*/ }
+  const handleNodeDrag = (nodeId: number, x: number, y: number) => {
+    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, x, y } : n));
   };
 
 
-  {/*隣接行列生成*/ }
-  function generateAdjacencyMatrix() {
-    const n = nodes.length;
-    const idToIndex: Record<number, number> = {};
-    nodes.forEach((node, idx) => { idToIndex[node.id] = idx; });
+  {/*入次数/出次数最大ノードを計算*/ }
+  const calcMaxDegreeNodes = () => {
+    const { maxInNodeId, maxOutNodeId } = calcMaxDegreeNodesPure(nodes, edges);
+    setMaxInNodeId(maxInNodeId);
+    setMaxOutNodeId(maxOutNodeId);
+  };
 
-    const matrix: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
-
-    edges.forEach(edge => {
-      const fromIdx = idToIndex[edge.from];
-      const toIdx = idToIndex[edge.to];
-      matrix[fromIdx][toIdx] = weightedMode ? edge.weight : 1;
-    });
-
-    return matrix;
-  }
-
-
-  {/*距離行列生成*/ }
-  function generateDistanceMatrix(): number[][] {
-    const n = nodes.length;
-    const idToIndex: Record<number, number> = {};
-    nodes.forEach((node, idx) => { idToIndex[node.id] = idx; });
-
-    const dist: number[][] = Array.from({ length: n }, () => Array(n).fill(Infinity));
-    for (let i = 0; i < n; i++) dist[i][i] = 0;
-
-    edges.forEach(e => {
-      const from = idToIndex[e.from];
-      const to = idToIndex[e.to];
-      dist[from][to] = weightedMode ? e.weight : 1;
-    });
-
-    for (let k = 0; k < n; k++) {
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j < n; j++) {
-          if (dist[i][k] + dist[k][j] < dist[i][j]) {
-            dist[i][j] = dist[i][k] + dist[k][j];
-          }
-        }
-      }
-    }
-
-    return dist;
-  }
-
-
-  {/*無向隣接行列生成*/ }
-  function generateUndirectedAdjacencyMatrix() {
-    const n = nodes.length;
-    const idToIndex: Record<number, number> = {};
-    nodes.forEach((node, idx) => { idToIndex[node.id] = idx; });
-
-    const matrix: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
-
-    edges.forEach(edge => {
-      const fromIdx = idToIndex[edge.from];
-      const toIdx = idToIndex[edge.to];
-      matrix[fromIdx][toIdx] = 1;
-      matrix[toIdx][fromIdx] = 1; // 無向グラフなので逆も1
-    });
-
-    return matrix;
-  }
-
-
-  {/*各ノードの次数を計算*/ }
-  function calculateDegrees() {
-    const matrix = generateUndirectedAdjacencyMatrix();
-    const n = matrix.length;
-    if (n === 0) return { degrees: [], avg: 0 };
-
-    const degrees = matrix.map((row, idx) => ({
-      id: nodes[idx].id,
-      label: nodes[idx].label,
-      degree: row.reduce((a, b) => a + b, 0),
-    }));
-
-    const totalDegree = degrees.reduce((sum, node) => sum + node.degree, 0);
-
-    return { degrees, avg: totalDegree };
-  }
-
-
-  {/*次数分布を計算*/ }
-  function calculateDegreeDistribution() {
-    const { degrees } = calculateDegrees();
-    const counts: Record<number, number> = {};
-
-    degrees.forEach(d => {
-      const k = d.degree;
-      if (!(k in counts)) counts[k] = 0;
-      counts[k] += 1;
-    });
-
-    return { counts };
-  }
-
-  {/*ノードの隣接ノードを取得*/ }
-  function getNeighbors(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
-    const neighbors = new Set<number>();
-    edges.forEach(e => {
-      if (e.from === nodeId) neighbors.add(e.to);
-      if (e.to === nodeId) neighbors.add(e.from); // 無向グラフ扱い
-    });
-    return Array.from(neighbors);
-  }
-
-  {/*隣接ノード同士でつながっている数を数える*/ }
-  function countNeighborConnections(neighbors: number[], edges: { from: number; to: number; weight: number }[]) {
-    let count = 0;
-    const set = new Set(neighbors);
-    edges.forEach(e => {
-      if (set.has(e.from) && set.has(e.to)) count++;
-    });
-    return count;
-  }
-
-  {/*クラスタ係数（あるノード）*/ }
-  function clusteringCoefficient(nodeId: number, edges: { from: number; to: number; weight: number }[]) {
-    const neighbors = getNeighbors(nodeId, edges);
-    const k = neighbors.length;
-
-    if (k < 2) return 0;
-
-    const E = countNeighborConnections(neighbors, edges);
-
-    return E / (k * (k - 1));
-  }
-
-  {/*全ノードのクラスタ係数を計算*/ }
-  function computeClusteringCoefficients() {
-    const result: Record<number, number> = {};
-
-    nodes.forEach(node => {
-      result[node.id] = clusteringCoefficient(node.id, edges);
-    });
-
-    setClusteringCoefficients(result);
-
-    // 平均値も計算
-    const values = Object.values(result);
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    setAverageClustering(avg);
-
+  {/*全ノードのクラスタ係数と平均値を計算*/ }
+  const computeClusteringCoefficients = () => {
+    const { coefficients, average } = computeClusteringCoefficientsPure(nodes, edges);
+    setClusteringCoefficients(coefficients);
+    setAverageClustering(average);
     setShowClustering(true);
-  }
-
-  {/*距離行列から平均ノード間距離を計算*/ }
-  function averageShortestPathFromMatrix() {
-    const dist = generateDistanceMatrix();
-    const n = dist.length;
-
-    let total = 0;
-    let count = 0;
-
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (i !== j && dist[i][j] < Infinity) {
-          total += dist[i][j];
-          count++;
-        }
-      }
-    }
-
-    if (count === 0) return 0;
-    return total / count;
-  }
-
-  {/*ノードの次数を取得*/ }
-  function getDegree(nodeId: number) {
-    const matrix = generateUndirectedAdjacencyMatrix();
-    const idToIndex: Record<number, number> = {};
-    nodes.forEach((node, idx) => { idToIndex[node.id] = idx; });
-
-    const idx = idToIndex[nodeId];
-    if (idx === undefined) return 0;
-
-    return matrix[idx].reduce((a, b) => a + b, 0);
-  }
-
-  {/*平均近傍次数を計算*/ }
-  function averageNeighborDegree(nodeId: number) {
-    const neighbors = getNeighbors(nodeId, edges);
-    const k = neighbors.length;
-
-    if (k === 0) return 0;
-
-    let total = 0;
-    neighbors.forEach(nid => {
-      total += getDegree(nid);
-    });
-
-    return total / k;
-  }
-
-
-
+  };
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans relative">
+    <div className="flex h-screen bg-gray-100 font-sans relative overflow-hidden">
+      {/* ハンバーガーメニュー（モバイルのみ） */}
+      <button
+        className="fixed top-4 left-4 z-50 md:hidden bg-white hover:bg-gray-100 text-gray-800 p-2 rounded shadow-lg transition-all duration-300"
+        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        aria-label="メニューを開閉"
+      >
+        ☰
+      </button>
+
       {/* ヘルプボタン 右上 */}
       <button
         className="fixed top-4 right-4 z-50 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow-lg transition-all duration-300"
@@ -367,8 +138,22 @@ export default function Home() {
         ヘルプ
       </button>
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-      {/* 左メニュー */}
-      <div className="w-1/4 p-4 space-y-6 overflow-y-auto">
+
+      {/* モバイルでメニューを開いたときの背景オーバーレイ */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* 左メニュー：モバイルは左からスライドするドロワー、md以上は常時表示のサイドバー */}
+      <div
+        className={`fixed md:static inset-y-0 left-0 z-40 w-4/5 max-w-xs md:max-w-none md:w-1/4 h-full md:h-auto
+          bg-gray-100 p-4 pt-16 md:pt-4 space-y-6 overflow-y-auto
+          transform transition-transform duration-300 ease-in-out
+          ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
+      >
         {/* グラフ操作カード */}
         <div className="bg-white rounded-xl p-5 shadow-lg transform transition-all duration-300 hover:scale-105 hover:shadow-2xl">
           <h2 className="text-xl font-bold mb-4 border-b pb-2 animate-fade-in">グラフ操作</h2>
@@ -383,6 +168,7 @@ export default function Home() {
                 if (confirm("本当にキャンバスをクリアしますか？")) {
                   setNodes([]); setEdges([]); setSelectedNode(null); setStartNodeId(null); setGoalNodeId(null);
                   setShortestPath([]); setLongestPath([]); setShortestPathVisible(true); setLongestPathVisible(true);
+                  setNodeIdCounter(0);
                 }
               }}
             >クリア</button>
@@ -429,7 +215,7 @@ export default function Home() {
             onClick={() => {
               if (startNodeId !== null && goalNodeId !== null) {
                 if (shortestPathVisible) setShortestPathVisible(false);
-                else { setShortestPath(findShortestPath(startNodeId, goalNodeId)); setShortestPathVisible(true); }
+                else { setShortestPath(findShortestPath(nodes, edges, startNodeId, goalNodeId)); setShortestPathVisible(true); }
               }
             }}
           >
@@ -441,7 +227,7 @@ export default function Home() {
             onClick={() => {
               if (startNodeId !== null && goalNodeId !== null) {
                 if (longestPathVisible) setLongestPathVisible(false);
-                else { setLongestPath(findLongestPath(startNodeId, goalNodeId)); setLongestPathVisible(true); }
+                else { setLongestPath(findLongestPath(nodes, edges, startNodeId, goalNodeId)); setLongestPathVisible(true); }
               }
             }}
           >
@@ -503,8 +289,7 @@ export default function Home() {
   transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
                       onClick={() => {
                         if (!showDegrees) { // 非表示なら計算して表示
-                          const { degrees } = calculateDegrees();
-                          setNodeDegrees(degrees);
+                          setNodeDegrees(calculateDegrees(nodes, edges));
                           setShowDegrees(true);
                         } else { // 表示中なら非表示にする
                           setShowDegrees(false);
@@ -519,8 +304,7 @@ export default function Home() {
   transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
                       onClick={() => {
                         if (!showDegreeDist) { // 非表示なら計算して表示
-                          const { counts } = calculateDegreeDistribution();
-                          setDegreeDist(counts);
+                          setDegreeDist(calculateDegreeDistribution(nodes, edges));
                           setShowDegreeDist(true);
                         } else { // 表示中なら非表示
                           setShowDegreeDist(false);
@@ -549,8 +333,7 @@ export default function Home() {
   transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
                       onClick={() => {
                         if (!showAverageDistance) {
-                          const avg = averageShortestPathFromMatrix();
-                          setAverageDistance(avg);
+                          setAverageDistance(averageShortestPathFromMatrix(nodes, edges, weightedMode));
                           setShowAverageDistance(true);
                         } else {
                           setShowAverageDistance(false);
@@ -568,7 +351,7 @@ export default function Home() {
                           const list = nodes.map(n => ({
                             id: n.id,
                             label: n.label,
-                            avgNeighborDegree: averageNeighborDegree(n.id)
+                            avgNeighborDegree: averageNeighborDegree(n.id, nodes, edges)
                           }));
                           setAvgNeighborDegreeList(list);
                           setShowAvgNeighborDegree(true);
@@ -618,37 +401,6 @@ export default function Home() {
                   </div>
                 ),
               },
-
-              {
-                title: "ai209 ネットワーク構築法",
-                content: (
-                  <div className="space-y-2">
-                    <button
-                      className="w-full bg-pink-500 hover:bg-pink-600 text-white py-2 rounded-lg 
-             transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
-                      onClick={() => { calcMaxDegreeNodes(); setShowMaxIn(!showMaxIn); }}
-                    >
-                      入次数最大ノード {showMaxIn ? "非表示" : "表示"}
-                    </button>
-
-                    <button
-                      className="w-full bg-cyan-500 hover:bg-cyan-600 text-white py-2 rounded-lg
-             transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
-                      onClick={() => { calcMaxDegreeNodes(); setShowMaxOut(!showMaxOut); }}
-                    >
-                      出次数最大ノード {showMaxOut ? "非表示" : "表示"}
-                    </button>
-
-                    <button
-                      className="w-full bg-lime-500 hover:bg-lime-600 text-white py-2 rounded-lg
-  transform transition-all duration-300 hover:scale-105 hover:shadow-lg"
-                      onClick={() => setShowUndirectedMatrix(!showUndirectedMatrix)}
-                    >
-                      無向隣接行列 {showUndirectedMatrix ? "非表示" : "表示"}
-                    </button>
-                  </div>
-                ),
-              }
             ]}
           /></div>
 
@@ -712,254 +464,54 @@ export default function Home() {
       </div>
 
 
-      {/* 右キャンバス */}
-      {showUndirectedMatrix && (
-        <div className="absolute top-10 right-10 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowUndirectedMatrix(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1">無向 A =</h2>
-          <table className="table-auto border-collapse border border-gray-400 w-full text-sm">
-            <tbody>
-              {generateUndirectedAdjacencyMatrix().map((row, i) => (
-                <tr key={i}>
-                  {row.map((cell, j) => (
-                    <td key={j} className="border px-2 py-1 text-center">{cell}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <InfoPanels
+        nodes={nodes}
+        edges={edges}
+        weightedMode={weightedMode}
+        showUndirectedMatrix={showUndirectedMatrix}
+        onCloseUndirectedMatrix={() => setShowUndirectedMatrix(false)}
+        showMatrix={showMatrix}
+        onCloseMatrix={() => setShowMatrix(false)}
+        showDistanceMatrix={showDistanceMatrix}
+        onCloseDistanceMatrix={() => setShowDistanceMatrix(false)}
+        showDegrees={showDegrees}
+        onCloseDegrees={() => setShowDegrees(false)}
+        nodeDegrees={nodeDegrees}
+        showDegreeDist={showDegreeDist}
+        onCloseDegreeDist={() => setShowDegreeDist(false)}
+        degreeDist={degreeDist}
+        showClustering={showClustering}
+        onCloseClustering={() => setShowClustering(false)}
+        clusteringCoefficients={clusteringCoefficients}
+        averageClustering={averageClustering}
+        showAverageDistance={showAverageDistance}
+        onCloseAverageDistance={() => setShowAverageDistance(false)}
+        averageDistance={averageDistance}
+        showAvgNeighborDegree={showAvgNeighborDegree}
+        onCloseAvgNeighborDegree={() => setShowAvgNeighborDegree(false)}
+        avgNeighborDegreeList={avgNeighborDegreeList}
+      />
 
-
-      {showMatrix && (
-        <div className="absolute top-1/3 right-10 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowMatrix(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1">有向 A =</h2>
-          <table className="table-auto border-collapse border border-gray-400 w-full text-sm">
-            <tbody>
-              {generateAdjacencyMatrix().map((row, i) => (
-                <tr key={i}>
-                  {row.map((cell, j) => (
-                    <td key={j} className="border px-2 py-1 text-center">{cell}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-
-      {showDistanceMatrix && (
-        <div className="absolute top-2/3 right-10 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowDistanceMatrix(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1">G =</h2>
-          <table className="table-auto border-collapse border border-gray-400 w-full text-sm">
-            <tbody>
-              {generateDistanceMatrix().map((row, i) => (
-                <tr key={i}>
-                  {row.map((cell, j) => (
-                    <td key={j} className="border px-2 py-1 text-center">
-                      {cell === Infinity ? "∞" : cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-
-      {showDegrees && (
-        <div className="absolute top-2/3 right-2/8 bg-white border shadow-lg p-4 w-50 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowDegrees(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1"></h2>
-          <ul className="mt-2 space-y-1">
-            {nodeDegrees.map(n => (
-              <li key={n.id}>{n.label}: {n.degree} </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-
-      {showDegreeDist && (
-        <div className="absolute top-2/3 right-3/8 bg-white border shadow-lg p-4 w-50 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowDegreeDist(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1">P(k) =</h2>
-          <ul className="mt-2 space-y-1">
-            {Object.keys(degreeDist)
-              .sort((a, b) => Number(a) - Number(b))
-              .map(k => (
-                <li key={k}>
-                  P({k}) = {degreeDist[Number(k)]} / {nodes.length}
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
-
-
-      {showClustering && (
-        <div className="absolute top-2/3 right-4/8 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowClustering(false)}
-          >
-            ×
-          </button>
-
-          <h2 className="text-lg font-bold mb-2">クラスタ係数</h2>
-
-          <table className="w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border px-2 py-1">ノード</th>
-                <th className="border px-2 py-1">係数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(clusteringCoefficients).map(([id, coeff]) => (
-                <tr key={id}>
-                  <td className="border px-2 py-1">{id}</td>
-                  <td className="border px-2 py-1">{coeff.toFixed(3)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <p className="mt-3 font-bold">
-            平均クラスタ係数：{averageClustering?.toFixed(3)}
-          </p>
-        </div>
-      )}
-
-      {showAverageDistance && (
-        <div className="absolute top-10 right-2/8 bg-white border shadow-lg p-4 w-80 rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowAverageDistance(false)}
-          >
-            ×
-          </button>
-
-          <h2 className="text-xl font-bold mb-2">平均ノード間距離</h2>
-
-          <div className="text-center text-2xl font-semibold text-indigo-600">
-            {averageDistance !== null ? averageDistance.toFixed(3) : "-"}
-          </div>
-
-          <p className="text-gray-600 text-sm mt-2">
-            グラフ内の全ペアの最短距離の平均値です。
-          </p>
-        </div>
-      )}
-
-      {showAvgNeighborDegree && (
-        <div className="absolute top-1/4 right-2/8 bg-white border shadow-lg p-4 w-80 h-80 overflow-auto rounded-lg z-50">
-          <button
-            className="bg-red-500 text-white px-2 py-1 rounded mb-2"
-            onClick={() => setShowAvgNeighborDegree(false)}
-          >
-            ×
-          </button>
-          <h2 className="text-lg font-bold mb-2 border-b pb-1">平均近傍次数</h2>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border px-2 py-1">ID</th>
-                <th className="border px-2 py-1">ラベル</th>
-                <th className="border px-2 py-1">平均近傍次数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {avgNeighborDegreeList.map(n => (
-                <tr key={n.id}>
-                  <td className="border px-2 py-1">{n.id}</td>
-                  <td className="border px-2 py-1">{n.label}</td>
-                  <td className="border px-2 py-1">{n.avgNeighborDegree.toFixed(3)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-
-      <svg className="flex-1 border" onClick={handleCanvasClick}>
-        <defs>
-          <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
-            <path d="M0,0 L10,5 L0,10 Z" fill="black" />
-          </marker>
-        </defs>
-
-        {edges.map((edge, i) => {
-          const fromNode = nodes.find(n => n.id === edge.from);
-          const toNode = nodes.find(n => n.id === edge.to);
-          if (!fromNode || !toNode) return null;
-          const nodeRadius = 20, shorten = nodeRadius + 2;
-          const dx = toNode.x - fromNode.x, dy = toNode.y - fromNode.y;
-          const length = Math.sqrt(dx * dx + dy * dy), factor = (length - shorten) / length;
-          const x2 = fromNode.x + dx * factor, y2 = fromNode.y + dy * factor;
-
-          const isOnShortest = shortestPathVisible && shortestPath.includes(edge.from) && shortestPath.includes(edge.to) && shortestPath.indexOf(edge.to) === shortestPath.indexOf(edge.from) + 1;
-          const isOnLongest = longestPathVisible && longestPath.includes(edge.from) && longestPath.includes(edge.to) && longestPath.indexOf(edge.to) === longestPath.indexOf(edge.from) + 1;
-
-          return (
-            <g key={i}>
-              <line
-                x1={fromNode.x} y1={fromNode.y} x2={x2} y2={y2}
-                stroke={isOnShortest ? "orange" : isOnLongest ? "purple" : "black"}
-                strokeWidth={isOnShortest || isOnLongest ? 4 : 2}
-                markerEnd="url(#arrow)"
-              />
-              {weightedMode && <text x={(fromNode.x + x2) / 2} y={(fromNode.y + y2) / 2 - 5} textAnchor="middle" fill="black">{edge.weight}</text>}
-            </g>
-          )
-        })}
-
-        {nodes.map(node => {
-          let fillColor = "lightblue";
-          if (node.id === selectedNode) fillColor = "orange";
-          else if (node.id === startNodeId) fillColor = "green";
-          else if (node.id === goalNodeId) fillColor = "red";
-          else if (showMaxIn && node.id === maxInNodeId) fillColor = "pink";    // 入次数最大
-          else if (showMaxOut && node.id === maxOutNodeId) fillColor = "cyan";   // 出次数最大
-          return (
-            <g key={node.id} onClick={(e) => { e.stopPropagation(); handleNodeClick(node.id) }} onContextMenu={(e) => handleNodeRightClick(e, node.id)}>
-              <circle cx={node.x} cy={node.y} r={20} fill={fillColor} stroke="black" strokeWidth={2} />
-              <text x={node.x} y={node.y} textAnchor="middle" alignmentBaseline="middle" style={{ userSelect: "none", pointerEvents: "none" }}>{node.label}</text>
-            </g>
-          )
-        })}
-      </svg>
+      <GraphCanvas
+        nodes={nodes}
+        edges={edges}
+        weightedMode={weightedMode}
+        selectedNode={selectedNode}
+        startNodeId={startNodeId}
+        goalNodeId={goalNodeId}
+        shortestPath={shortestPath}
+        shortestPathVisible={shortestPathVisible}
+        longestPath={longestPath}
+        longestPathVisible={longestPathVisible}
+        showMaxIn={showMaxIn}
+        maxInNodeId={maxInNodeId}
+        showMaxOut={showMaxOut}
+        maxOutNodeId={maxOutNodeId}
+        onCanvasClick={handleCanvasClick}
+        onNodeClick={handleNodeClick}
+        onNodeRightClick={handleNodeRightClick}
+        onNodeDrag={handleNodeDrag}
+      />
     </div>
   );
 }

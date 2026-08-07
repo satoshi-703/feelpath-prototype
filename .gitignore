@@ -2,6 +2,7 @@
 fronted/my-app/node_modules/
 fronted/my-app/.next/
 fronted/my-app/.env
+fronted/my-app/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store
